@@ -12,10 +12,8 @@ const INITIAL_INVITE = {
 
 export default function GeneratorPage({
   isAuthed,
-  onLogin,
+  isLoading = false,
   onLogout,
-  onCreateUser,
-  users = [],
   currentUser,
 }) {
   const [invite, setInvite] = useState(INITIAL_INVITE);
@@ -25,13 +23,8 @@ export default function GeneratorPage({
   const [lastIssuedAt, setLastIssuedAt] = useState(null);
   const [downloadError, setDownloadError] = useState("");
 
-  const [loginUser, setLoginUser] = useState("");
-  const [loginPass, setLoginPass] = useState("");
-  const [loginError, setLoginError] = useState("");
-
   const cardRef = useRef(null);
-  const [newUser, setNewUser] = useState({ username: "", password: "", isAdmin: false });
-  const [userFeedback, setUserFeedback] = useState("");
+  const [generatingInvite, setGeneratingInvite] = useState(false);
 
   useEffect(() => {
     if (!isAuthed) {
@@ -41,31 +34,21 @@ export default function GeneratorPage({
       setGeneratorError("");
       setLastIssuedAt(null);
       setDownloadError("");
-      setUserFeedback("");
-      setNewUser({ username: "", password: "", isAdmin: false });
     }
   }, [isAuthed]);
 
   const issuedLabel = useMemo(() => {
-    if (!lastIssuedAt) {
+    if (!lastIssuedAt) return null;
+    try {
+      return new Date(lastIssuedAt).toLocaleString();
+    } catch {
       return null;
     }
-
-    return new Date(lastIssuedAt).toLocaleString();
   }, [lastIssuedAt]);
 
   const invitationName = cardDetails.name?.trim() || "Guest";
   const invitationBatch = cardDetails.batch?.trim() || "Batch";
   const creatorName = currentUser?.username ?? "Unknown creator";
-
-  const handleLogin = (event) => {
-    event.preventDefault();
-    setLoginError("");
-    const success = onLogin(loginUser, loginPass);
-    if (!success) {
-      setLoginError("Invalid username or password.");
-    }
-  };
 
   const handleInviteChange = (field) => (event) => {
     setInvite((prev) => ({
@@ -74,36 +57,44 @@ export default function GeneratorPage({
     }));
   };
 
-  const handleGenerate = (event) => {
+  const handleGenerate = async (event) => {
     event.preventDefault();
     setGeneratorError("");
     setDownloadError("");
 
+    if (!currentUser) {
+      setGeneratorError("Please log in to generate invitations.");
+      return;
+    }
+
     const payload = {
       ...invite,
-      generatedBy: currentUser?.username ?? "unknown-user",
+      generatedBy: currentUser.username,
     };
 
     try {
+      setGeneratingInvite(true);
       const envelope = createEnvelope(JSON.stringify(payload));
-      const { issuedAt } = decryptEnvelope(envelope);
+      const decrypted = decryptEnvelope(envelope);
+      const issuedAtValue = decrypted?.issuedAt ?? Date.now();
+
       setQrValue(envelope);
       setCardDetails(payload);
-      setLastIssuedAt(issuedAt);
+      setLastIssuedAt(issuedAtValue);
+
     } catch (error) {
-      if (error instanceof Error) {
-        setGeneratorError(error.message);
-      } else {
-        setGeneratorError("Something went wrong while creating the QR code.");
-      }
+      setGeneratorError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while creating the QR code."
+      );
+    } finally {
+      setGeneratingInvite(false);
     }
   };
 
   const handleDownloadCard = async () => {
-    if (!cardRef.current) {
-      return;
-    }
-
+    if (!cardRef.current) return;
     try {
       setDownloadError("");
       const dataUrl = await toPng(cardRef.current, {
@@ -115,24 +106,12 @@ export default function GeneratorPage({
       link.href = dataUrl;
       link.click();
     } catch (error) {
-      setDownloadError("Unable to prepare the invitation card. Please try again.");
+      setDownloadError(
+        error instanceof Error
+          ? error.message
+          : "Unable to prepare the invitation card."
+      );
     }
-  };
-
-  const handleCreateUser = (event) => {
-    event.preventDefault();
-    setUserFeedback("");
-    const result = onCreateUser(
-      newUser.username.trim(),
-      newUser.password,
-      newUser.isAdmin
-    );
-    if (!result.success) {
-      setUserFeedback(result.error);
-      return;
-    }
-    setUserFeedback("New user added successfully.");
-    setNewUser({ username: "", password: "", isAdmin: false });
   };
 
   return (
@@ -152,101 +131,22 @@ export default function GeneratorPage({
 
       {isAuthed && currentUser?.isAdmin && (
         <section className="mx-auto w-full max-w-5xl rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-lg shadow-slate-200/50 backdrop-blur sm:p-8">
-          <header className="flex flex-col gap-2 text-slate-900 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 text-slate-900 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Admin controls</h2>
-              <p className="text-sm text-slate-500">
-                Add teammates who can generate their own invitations.
+              <h2 className="text-lg font-semibold text-slate-900">
+                Team access
+              </h2>
+              <p className="text-sm text-slate-600">
+                Approve new accounts and manage existing members from the
+                dedicated dashboard.
               </p>
             </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Signed in as {currentUser.username}
-            </span>
-          </header>
-
-          <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <form onSubmit={handleCreateUser} className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                  New username
-                  <input
-                    value={newUser.username}
-                    onChange={(event) =>
-                      setNewUser((prev) => ({ ...prev, username: event.target.value }))
-                    }
-                    placeholder="Enter username"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
-                    required
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-                  Password
-                  <input
-                    value={newUser.password}
-                    onChange={(event) =>
-                      setNewUser((prev) => ({ ...prev, password: event.target.value }))
-                    }
-                    placeholder="Set password"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
-                    required
-                  />
-                </label>
-              </div>
-
-              <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={newUser.isAdmin}
-                  onChange={(event) =>
-                    setNewUser((prev) => ({ ...prev, isAdmin: event.target.checked }))
-                  }
-                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                Grant admin access
-              </label>
-
-              {userFeedback && (
-                <p
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold ${
-                    userFeedback.includes("success")
-                      ? "border border-emerald-200 bg-emerald-50 text-emerald-600"
-                      : "border border-rose-200 bg-rose-50 text-rose-600"
-                  }`}
-                >
-                  {userFeedback}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-400/40 transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
-              >
-                Add user
-              </button>
-            </form>
-
-            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-              <h3 className="text-sm font-semibold text-slate-800">Current users</h3>
-              <ul className="space-y-2">
-                {users.map((user) => (
-                  <li
-                    key={user.username}
-                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600"
-                  >
-                    <span>{user.username}</span>
-                    <span
-                      className={`rounded-full px-2 py-1 ${
-                        user.isAdmin
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-200 text-slate-600"
-                      }`}
-                    >
-                      {user.isAdmin ? "Admin" : "Member"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <Link
+              to="/users"
+              className="inline-flex items-center justify-center rounded-full border border-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-900 transition hover:bg-slate-900 hover:text-white"
+            >
+              Open user management
+            </Link>
           </div>
         </section>
       )}
@@ -254,48 +154,33 @@ export default function GeneratorPage({
       {!isAuthed ? (
         <section className="mx-auto w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-300/20">
           <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 px-6 py-5 text-left">
-            <h2 className="text-xl font-semibold text-slate-900">Sign in to continue</h2>
+            <h2 className="text-xl font-semibold text-slate-900">Account required</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Only authenticated users can issue secure invitation QR codes.
+              {isLoading
+                ? "Checking your session, please wait..."
+                : "Sign in or create an account to issue secure invitation QR codes."}
             </p>
           </div>
-          <form onSubmit={handleLogin} className="flex flex-col gap-4 px-6 py-6">
-            <label className="flex flex-col gap-1 text-left text-sm font-medium text-slate-700">
-              Username
-              <input
-                value={loginUser}
-                onChange={(event) => setLoginUser(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
-                autoComplete="username"
-                required
-              />
-            </label>
-
-            <label className="flex flex-col gap-1 text-left text-sm font-medium text-slate-700">
-              Password
-              <input
-                type="password"
-                value={loginPass}
-                onChange={(event) => setLoginPass(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
-                autoComplete="current-password"
-                required
-              />
-            </label>
-
-            {loginError && (
-              <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">
-                {loginError}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-400/40 transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
-            >
-              Unlock generator
-            </button>
-          </form>
+          {isLoading ? (
+            <div className="px-6 py-6 text-sm font-semibold text-slate-600">
+              Authenticating...
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
+              <Link
+                to="/login"
+                className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-500/30 transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
+              >
+                Go to login
+              </Link>
+              <Link
+                to="/register"
+                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
+              >
+                Create account
+              </Link>
+            </div>
+          )}
         </section>
       ) : (
         <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
@@ -343,9 +228,10 @@ export default function GeneratorPage({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <button
                     type="submit"
-                    className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-400/40 transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white"
+                    disabled={generatingInvite}
+                    className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-400/40 transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Generate invitation QR
+                    {generatingInvite ? "Generating..." : "Generate invitation QR"}
                   </button>
 
                   <button
@@ -415,8 +301,9 @@ export default function GeneratorPage({
 
             <div className="flex flex-col gap-2 rounded-3xl border border-slate-200 bg-white/80 p-4 text-xs text-slate-600 shadow-lg shadow-slate-200/40 backdrop-blur">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs font-medium text-slate-700">
-                  Invitation card {qrValue ? "is ready." : "will appear after you generate the QR."}
+                <p className="text-xs font-semibold text-slate-700">
+                  Invitation card{" "}
+                  {qrValue ? "is ready." : isLoading ? "is loading..." : "will appear after you generate the QR."}
                 </p>
                 {qrValue && (
                   <button

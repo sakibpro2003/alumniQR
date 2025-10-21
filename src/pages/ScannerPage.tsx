@@ -1,16 +1,85 @@
 // @ts-nocheck
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useZxing } from "react-zxing";
 import { decryptEnvelope } from "../lib/secureQr";
 
-export default function ScannerPage() {
+export default function ScannerPage({ onRecordScan }) {
   const [scannerEnabled, setScannerEnabled] = useState(false);
   const [scannerStatus, setScannerStatus] = useState("Scanner idle");
   const [scanError, setScanError] = useState("");
   const [scanResult, setScanResult] = useState(null);
   const [lastRaw, setLastRaw] = useState("");
   const lastResetTimer = useRef(null);
+  const [recordFeedback, setRecordFeedback] = useState(null);
+  const feedbackClassMap = {
+    success: "border border-emerald-200 bg-emerald-50 text-emerald-700",
+    warning: "border border-amber-200 bg-amber-50 text-amber-700",
+    error: "border border-rose-200 bg-rose-50 text-rose-600",
+    info: "border border-slate-200 bg-slate-50 text-slate-600",
+  };
+
+  const recordScan = useCallback(
+    async ({ envelope, data, issuedAt }) => {
+      if (!onRecordScan || !data) {
+        return;
+      }
+
+      let payloadIssuedAt = null;
+      if (issuedAt !== undefined && issuedAt !== null) {
+        const issuedDate =
+          typeof issuedAt === "number" ? new Date(issuedAt) : new Date(issuedAt);
+        if (!Number.isNaN(issuedDate.getTime())) {
+          payloadIssuedAt = issuedDate.toISOString();
+        }
+      }
+      if (!payloadIssuedAt) {
+        payloadIssuedAt = new Date().toISOString();
+      }
+
+      setRecordFeedback({
+        type: "info",
+        message: "Recording guest check-in...",
+      });
+
+      try {
+        const result = await onRecordScan({
+          envelope,
+          name: data.name ?? "",
+          batch: data.batch ?? "",
+          generatedBy: data.generatedBy ?? "",
+          issuedAt: payloadIssuedAt,
+        });
+
+        if (result?.success) {
+          setRecordFeedback({
+            type: "success",
+            message: result?.message || "Guest check-in recorded.",
+          });
+        } else if (result?.duplicate) {
+          setRecordFeedback({
+            type: "warning",
+            message: result?.message || "Duplicate QR detected.",
+          });
+        } else {
+          setRecordFeedback({
+            type: "error",
+            message:
+              result?.message || "Failed to record guest check-in.",
+          });
+        }
+      } catch (error) {
+        setRecordFeedback({
+          type: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to record guest check-in.",
+        });
+      }
+    },
+    [onRecordScan]
+  );
 
   const { ref: scannerRef } = useZxing({
     paused: !scannerEnabled,
@@ -44,13 +113,30 @@ export default function ScannerPage() {
             parsed = null;
           }
         }
-        setScanResult({
+        const enrichedResult = {
           issuedAt: payload?.issuedAt ?? null,
           raw: payload?.text ?? rawText,
           data: parsed,
-        });
+          envelope: rawText,
+        };
+        setScanResult(enrichedResult);
         setScanError("");
         setScannerStatus("Encrypted QR detected");
+
+        if (parsed) {
+          void recordScan({
+            envelope: rawText,
+            data: parsed,
+            issuedAt: payload?.issuedAt ?? null,
+          });
+        } else {
+          setRecordFeedback({
+            type: "error",
+            message:
+              "QR contents could not be parsed. Unable to record this scan.",
+          });
+        }
+
         lastResetTimer.current = setTimeout(() => {
           setLastRaw("");
         }, 1500);
@@ -244,6 +330,16 @@ export default function ScannerPage() {
                     </div>
                   )}
                 </div>
+              )}
+
+              {recordFeedback && (
+                <p
+                  className={`rounded-xl px-3 py-2 text-xs font-semibold ${
+                    feedbackClassMap[recordFeedback.type] ?? feedbackClassMap.info
+                  }`}
+                >
+                  {recordFeedback.message}
+                </p>
               )}
 
               {!scanResult && !scanError && (
