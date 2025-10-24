@@ -22,9 +22,11 @@ export default function GeneratorPage({
   const [generatorError, setGeneratorError] = useState("");
   const [lastIssuedAt, setLastIssuedAt] = useState(null);
   const [downloadError, setDownloadError] = useState("");
+  const [qrSize, setQrSize] = useState(340);
 
   const cardRef = useRef(null);
   const [generatingInvite, setGeneratingInvite] = useState(false);
+  const qrContainerRef = useRef(null);
 
   useEffect(() => {
     if (!isAuthed) {
@@ -36,6 +38,29 @@ export default function GeneratorPage({
       setDownloadError("");
     }
   }, [isAuthed]);
+
+  useEffect(() => {
+    const updateSize = () => {
+      if (qrContainerRef.current) {
+        const width = qrContainerRef.current.offsetWidth;
+        const nextSize = Math.max(180, Math.min(340, Math.floor(width * 0.9)));
+        setQrSize(nextSize);
+        return;
+      }
+      if (typeof window !== "undefined") {
+        const width = window.innerWidth;
+        const nextSize =
+          width < 360 ? 180 : width < 480 ? 220 : width < 640 ? 260 : width < 1024 ? 320 : 340;
+        setQrSize(nextSize);
+      }
+    };
+
+    updateSize();
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", updateSize);
+      return () => window.removeEventListener("resize", updateSize);
+    }
+  }, []);
 
   const issuedLabel = useMemo(() => {
     if (!lastIssuedAt) return null;
@@ -183,7 +208,7 @@ export default function GeneratorPage({
           )}
         </section>
       ) : (
-        <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="flex flex-col gap-8">
           <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 sm:p-8">
             <div className="flex flex-col gap-6">
               <header className="flex flex-col gap-2 text-slate-900">
@@ -249,7 +274,7 @@ export default function GeneratorPage({
           <section className="flex flex-col gap-4">
             <div
               ref={cardRef}
-              className="relative flex min-h-[220px] flex-col overflow-hidden rounded-[32px] border border-white/60 bg-gradient-to-br from-[#fff4ec] via-[#ffe8fa] to-[#eef4ff] p-6 text-[#2f1c52] shadow-[0_26px_58px_-26px_rgba(131,96,195,0.45)] sm:p-8 lg:flex-row lg:items-center lg:gap-10"
+              className="relative flex min-h-[220px] flex-col overflow-hidden rounded-[32px] border border-white/60 bg-gradient-to-br from-[#fff4ec] via-[#ffe8fa] to-[#eef4ff] p-6 font-invitation-body text-[#2f1c52] shadow-[0_26px_58px_-26px_rgba(131,96,195,0.45)] sm:p-8"
             >
               <div
                 className="pointer-events-none absolute inset-x-0 -top-28 h-32 bg-gradient-to-b from-white/85 via-white/45 to-transparent"
@@ -264,13 +289,16 @@ export default function GeneratorPage({
                 <div className="space-y-4">
                   <span className="inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-1 text-[10px] font-semibold uppercase tracking-[0.4em] text-[#d64584] shadow-sm shadow-[#d64584]/20">
                     <span className="h-2 w-2 rounded-full bg-[#ff6f91]" />
-                    Sealed Invitation
+                    Graduation Carnival
                   </span>
-                  <h2 className="text-3xl font-semibold leading-tight text-[#1f1d40] sm:text-4xl">
+                  <h2 className="font-invitation-heading text-3xl font-semibold leading-tight text-[#1f1d40] sm:text-4xl">
                     Dear {invitationName},
                   </h2>
                   <p className="text-base font-medium text-[#3f3d56] sm:text-lg">
-                    You're warmly invited. Present this envelope and the code beside it at the celebration entrance.
+                    Join batch তারুণ্যে '১৩ × চিরন্তন '১৪ for an unforgettable Graduation Carnival. Present this encrypted invitation and the QR beside it to enter the celebration.
+                  </p>
+                  <p className="font-invitation-heading text-sm font-semibold uppercase tracking-[0.28em] text-[#7a62c5]">
+                    তারুণ্যের উচ্ছ্বাস রয়ে যাবে চিরন্তন
                   </p>
                 </div>
 
@@ -281,16 +309,20 @@ export default function GeneratorPage({
                 </div>
               </div>
 
-              <div className="relative mx-auto mt-6 flex shrink-0 flex-col items-center justify-center lg:mt-0">
-                <div className="absolute -inset-9 rounded-[38px] bg-white/45 blur-[44px]" />
-                <div className="relative rounded-[38px] border border-white/80 bg-white/95 p-6 shadow-2xl shadow-[#8360c3]/40">
+              <div
+                ref={qrContainerRef}
+                className="relative mx-auto mt-6 flex w-full max-w-xs shrink-0 flex-col items-center justify-center sm:max-w-sm lg:max-w-md"
+              >
+                <div className="absolute -inset-6 rounded-[32px] bg-white/45 blur-[44px] sm:-inset-9 sm:rounded-[38px]" />
+                <div className="relative w-full rounded-[32px] border border-white/80 bg-white/95 p-4 shadow-2xl shadow-[#8360c3]/40 sm:rounded-[38px] sm:p-6">
                   <QRCodeCanvas
                     value={qrValue || "Invitation pending"}
-                    size={340}
+                    size={qrSize}
                     bgColor="#FFFFFF"
                     fgColor="#1f1d40"
                     level="H"
                     includeMargin={false}
+                    style={{ width: "100%", height: "auto" }}
                   />
                 </div>
                 <p className="mt-3 text-center text-[11px] font-medium uppercase tracking-wide text-[#8360c3]">

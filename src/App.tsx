@@ -77,7 +77,7 @@ function Navigation({ currentUser, onLogout }) {
           to="/gen"
           className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl"
         >
-          QR Secure
+          AlumniVerifier
         </Link>
 
         <nav className="flex items-center gap-2">
@@ -472,6 +472,22 @@ export default function App() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </main>
+          <footer className="border-t border-white/60 bg-white/70 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-2 px-4 py-6 text-center text-slate-600 sm:flex-row sm:justify-between sm:text-left sm:px-6 lg:px-10">
+              <span className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+                Made by Sakib Prodhan
+              </span>
+              <a
+                href="mailto:sakibprodhan2003@gmail.com"
+                className="text-sm font-medium text-indigo-600 transition hover:text-indigo-500"
+              >
+                Email: sakibprodhan2003@gmail.com
+              </a>
+              <span className="text-xs uppercase tracking-[0.3em] text-slate-500">
+                Made by Sakib Prodhan · Made for BAUST
+              </span>
+            </div>
+          </footer>
         </div>
       </div>
     </BrowserRouter>

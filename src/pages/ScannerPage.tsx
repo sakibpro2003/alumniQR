@@ -122,6 +122,7 @@ export default function ScannerPage({ onRecordScan }) {
         setScanResult(enrichedResult);
         setScanError("");
         setScannerStatus("Encrypted QR detected");
+        setScannerEnabled(false);
 
         if (parsed) {
           void recordScan({
@@ -171,15 +172,19 @@ export default function ScannerPage({ onRecordScan }) {
   }, []);
 
   useEffect(() => {
-    if (!scannerEnabled) {
+    if (scannerEnabled) {
+      setScannerStatus("Point the camera at an encrypted QR code.");
+      return;
+    }
+
+    if (scanResult) {
+      setScannerStatus("Scan captured. Scanner paused.");
+    } else {
       setScannerStatus("Scanner idle");
-      setScanResult(null);
       setScanError("");
       setLastRaw("");
-    } else {
-      setScannerStatus("Point the camera at an encrypted QR code.");
     }
-  }, [scannerEnabled]);
+  }, [scannerEnabled, scanResult]);
 
   const issuedLabel = useMemo(() => {
     if (!scanResult?.issuedAt) {
@@ -188,12 +193,69 @@ export default function ScannerPage({ onRecordScan }) {
     return new Date(scanResult.issuedAt).toLocaleString();
   }, [scanResult]);
 
-  const toggleScanner = () => {
-    setScannerEnabled((enabled) => !enabled);
+  const isDuplicateScan = useMemo(
+    () => recordFeedback?.type === "warning",
+    [recordFeedback]
+  );
+
+  const invitationTheme = useMemo(
+    () =>
+      isDuplicateScan
+        ? {
+            container: "border-rose-200 bg-rose-50 text-rose-700",
+            heading: "text-rose-700",
+            label: "text-rose-600",
+            value: "text-rose-800",
+            inner: "border-rose-200 text-rose-800",
+            raw: "border-rose-200 text-rose-800",
+            issuedText: "text-rose-700/80",
+            issuedHeading: "text-rose-700",
+          }
+        : {
+            container: "border-emerald-200 bg-emerald-50 text-emerald-700",
+            heading: "text-emerald-700",
+            label: "text-emerald-600",
+            value: "text-emerald-800",
+            inner: "border-emerald-200 text-emerald-800",
+            raw: "border-emerald-200 text-emerald-800",
+            issuedText: "text-emerald-700/80",
+            issuedHeading: "text-emerald-700",
+          },
+    [isDuplicateScan]
+  );
+
+  const startNewScan = useCallback(() => {
+    setScanResult(null);
+    setScanError("");
+    setRecordFeedback(null);
+    setLastRaw("");
+    setScannerEnabled(true);
+  }, []);
+
+  const newScanReady = useMemo(
+    () => Boolean(scanResult) && !scannerEnabled,
+    [scanResult, scannerEnabled]
+  );
+
+  const handleScannerButtonClick = () => {
+    if (newScanReady) {
+      startNewScan();
+      return;
+    }
+
+    setScannerEnabled((enabled) => {
+      const next = !enabled;
+      if (next) {
+        setScanError("");
+        setRecordFeedback(null);
+        setLastRaw("");
+      }
+      return next;
+    });
   };
 
   return (
-    <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 pb-16 pt-10 sm:px-6 lg:px-10">
+    <div className="relative mx-auto w-full max-w-4xl px-4 pb-16 pt-10 sm:px-6 lg:px-8">
       <header className="text-center text-slate-900">
         <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-4 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-emerald-500 shadow-sm shadow-emerald-100">
           <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
@@ -207,8 +269,7 @@ export default function ScannerPage({ onRecordScan }) {
         </p>
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
-        <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-emerald-200/40 sm:p-8">
+      <section className="relative mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-emerald-200/40 sm:p-8">
           <div className="absolute -top-20 -right-14 h-40 w-40 rounded-full bg-emerald-200/50 blur-3xl" />
           <div className="relative flex h-full flex-col gap-6">
             <div className="flex flex-col gap-2 text-slate-900">
@@ -223,14 +284,18 @@ export default function ScannerPage({ onRecordScan }) {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"
-                onClick={toggleScanner}
+                onClick={handleScannerButtonClick}
                 className={`inline-flex items-center justify-center rounded-2xl px-6 py-3 text-sm font-semibold text-white shadow-lg transition focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:ring-offset-2 focus:ring-offset-white ${
                   scannerEnabled
                     ? "bg-emerald-500 shadow-emerald-400/40 hover:brightness-105"
                     : "bg-emerald-400 shadow-emerald-300/40 hover:brightness-105"
                 }`}
               >
-                {scannerEnabled ? "Pause scanner" : "Start secure scanner"}
+                {newScanReady
+                  ? "New scan"
+                  : scannerEnabled
+                  ? "Pause scanner"
+                  : "Start secure scanner"}
               </button>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                 AES validation happens automatically
@@ -251,7 +316,9 @@ export default function ScannerPage({ onRecordScan }) {
                     Scanner paused
                   </span>
                   <p className="max-w-[14rem] text-slate-100">
-                    Tap “Start secure scanner” to begin.
+                    {newScanReady
+                      ? 'Scan captured. Tap "New scan" to continue.'
+                      : 'Tap "Start secure scanner" to begin.'}
                   </p>
                 </div>
               )}
@@ -285,45 +352,67 @@ export default function ScannerPage({ onRecordScan }) {
               )}
 
               {scanResult && (
-                <div className="grid gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-                  <h3 className="text-base font-semibold text-emerald-700">
+                <div
+                  className={`grid gap-3 rounded-xl border p-4 text-sm ${invitationTheme.container}`}
+                >
+                  <h3
+                    className={`text-base font-semibold ${invitationTheme.heading}`}
+                  >
                     Invitation contents
                   </h3>
                   {scanResult.data ? (
-                    <div className="grid gap-2 rounded-xl border border-emerald-200 bg-white/70 p-4 text-sm text-emerald-800">
+                    <div
+                      className={`grid gap-2 rounded-xl border bg-white/70 p-4 text-sm ${invitationTheme.inner}`}
+                    >
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                        <span className="text-xs uppercase tracking-wide text-emerald-600">
+                        <span
+                          className={`text-xs uppercase tracking-wide ${invitationTheme.label}`}
+                        >
                           Guest
                         </span>
-                        <span className="text-base font-semibold text-emerald-800">
+                        <span
+                          className={`text-base font-semibold ${invitationTheme.value}`}
+                        >
                           {scanResult.data.name || "Unknown guest"}
                         </span>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                        <span className="text-xs uppercase tracking-wide text-emerald-600">
+                        <span
+                          className={`text-xs uppercase tracking-wide ${invitationTheme.label}`}
+                        >
                           Batch
                         </span>
-                        <span className="text-base font-semibold text-emerald-800">
-                          {scanResult.data.batch || "—"}
+                        <span
+                          className={`text-base font-semibold ${invitationTheme.value}`}
+                        >
+                          {scanResult.data.batch || "-"}
                         </span>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                        <span className="text-xs uppercase tracking-wide text-emerald-600">
+                        <span
+                          className={`text-xs uppercase tracking-wide ${invitationTheme.label}`}
+                        >
                           Generated by
                         </span>
-                        <span className="text-base font-semibold text-emerald-800">
+                        <span
+                          className={`text-base font-semibold ${invitationTheme.value}`}
+                        >
                           {scanResult.data.generatedBy || "Unknown"}
                         </span>
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-emerald-200 bg-white/70 p-3 font-mono text-xs text-emerald-800">
+                    <div
+                      className={`rounded-xl border bg-white/70 p-3 font-mono text-xs ${invitationTheme.raw}`}
+                    >
                       {scanResult.raw}
                     </div>
                   )}
                   {issuedLabel && (
-                    <div className="text-xs text-emerald-700/80">
-                      <span className="font-semibold uppercase tracking-wide text-emerald-700">
+                    <div className={`text-xs ${invitationTheme.issuedText}`}>
+                      <span
+                        className={`font-semibold uppercase tracking-wide ${invitationTheme.issuedHeading}`}
+                      >
                         Issued
                       </span>
                       <div>{issuedLabel}</div>
@@ -350,34 +439,7 @@ export default function ScannerPage({ onRecordScan }) {
             </div>
           </div>
         </section>
-
-        <section className="flex flex-col gap-5 rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-xl shadow-indigo-200/40 sm:p-8">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">
-              Need to craft an invite?
-            </h2>
-            <p className="mt-2 text-sm text-slate-600">
-              Encrypted cards are issued from the generator after login. Share them digitally or print with confidence.
-            </p>
-          </div>
-          <Link
-            to="/gen"
-            className="inline-flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-400/40 transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:ring-offset-2 focus:ring-offset-white sm:w-auto"
-          >
-            Go to generator
-          </Link>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 text-sm text-slate-600">
-            <p className="font-semibold text-slate-800">
-              Quick tips
-            </p>
-            <ul className="mt-3 space-y-2 text-sm leading-relaxed">
-              <li>— Ensure the QR is well-lit and within focus.</li>
-              <li>— Hold steady for a second after detection.</li>
-              <li>— The decrypted text displays immediately below.</li>
-            </ul>
-          </div>
-        </section>
-      </div>
     </div>
   );
 }
+
